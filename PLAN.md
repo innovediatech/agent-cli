@@ -2,7 +2,7 @@
 
 **One-line:** Go library that gives every Innovedia CLI agent-native ergonomics by default — no per-CLI re-derivation.
 
-**Status:** v0 — green-field. Started 2026-05-11.
+**Status:** v0.1b — `mirror` package landed 2026-05-12 (resource-agnostic SQLite cache + FTS5 + cursors + optional typed columns). Six packages from v0/v0.1a still hold; see `mirror/mirror.go`.
 
 **Why this exists:** The Printing Press experiment (see `/home/innovedia-admin/pp-sandbox/FINDINGS.md`) validated that the agent-native CLI patterns (`--agent`, `--select`, response envelope, typed exit codes, stderr/stdout discipline, local SQLite mirror) are the durable value, independent of the generator that produces them. This library codifies those patterns so they apply uniformly to:
 
@@ -115,8 +115,8 @@ Demonstrates: `--agent`, `--select id,greeting`, `--compact`, `--deliver file:`,
 
 ## Out of scope for v0
 
-- SQLite mirror (`mirror/`) — biggest piece architecturally; deserves its own session. Will land v0.1.
-- Auto-`agent-context` emitter walking the Cobra tree — also v0.1.
+- ~~SQLite mirror (`mirror/`)~~ — landed v0.1b (2026-05-12).
+- ~~Auto-`agent-context` emitter walking the Cobra tree~~ — landed v0.1a as `introspect`.
 - Webhook delivery with retries — v0 ships best-effort POST; retry/backoff is v0.2.
 - Profile system (saved flag sets) — v0.2.
 - `feedback` command pattern — v0.2.
