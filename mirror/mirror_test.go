@@ -403,6 +403,60 @@ func TestClearCursors(t *testing.T) {
 	}
 }
 
+func TestResetClearsCanonicalAndTypedAndState(t *testing.T) {
+	m := newMirror(t)
+	mustRegister(t, m, mirror.Resource{
+		Name: "contacts",
+		Columns: []mirror.Column{
+			{Name: "email", Type: "TEXT", From: "email", Index: true},
+		},
+	})
+	mustRegister(t, m, mirror.Resource{Name: "notes"}) // no typed table
+	mustUpsert(t, m, "contacts", map[string]any{"id": "c1", "email": "a@x.com"})
+	mustUpsert(t, m, "contacts", map[string]any{"id": "c2", "email": "b@x.com"})
+	mustUpsert(t, m, "notes", map[string]any{"id": "n1", "body": "hello"})
+	if err := m.SaveCursor(context.Background(), "contacts", "cur"); err != nil {
+		t.Fatalf("save cursor: %v", err)
+	}
+
+	cleared, err := m.Reset(context.Background())
+	if err != nil {
+		t.Fatalf("Reset: %v", err)
+	}
+	if cleared != 3 {
+		t.Errorf("Reset returned %d, want 3 canonical rows cleared", cleared)
+	}
+
+	// All three data tables should be empty.
+	for _, table := range []string{"resources", "resources_fts", "rt_contacts"} {
+		var n int
+		if err := m.DB().QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&n); err != nil {
+			t.Fatalf("count %s: %v", table, err)
+		}
+		if n != 0 {
+			t.Errorf("after Reset, %s has %d rows, want 0", table, n)
+		}
+	}
+
+	cursor, err := m.GetCursor(context.Background(), "contacts")
+	if err != nil {
+		t.Fatalf("GetCursor: %v", err)
+	}
+	if cursor != "" {
+		t.Errorf("cursor after Reset = %q, want empty", cursor)
+	}
+
+	// Re-upsert should work — schema is still intact.
+	mustUpsert(t, m, "contacts", map[string]any{"id": "c3", "email": "c@x.com"})
+	st, err := m.Status(context.Background())
+	if err != nil {
+		t.Fatalf("Status: %v", err)
+	}
+	if st["contacts"].Count != 1 {
+		t.Errorf("after re-upsert, contacts count = %d, want 1", st["contacts"].Count)
+	}
+}
+
 func TestStatus(t *testing.T) {
 	m := newMirror(t)
 	mustRegister(t, m, mirror.Resource{Name: "deals"})

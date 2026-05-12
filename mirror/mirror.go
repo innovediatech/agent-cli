@@ -589,13 +589,71 @@ func (m *Mirror) GetCursor(ctx context.Context, name string) (string, error) {
 
 // ClearCursors deletes every sync_state row, forcing the next sync to
 // re-walk from the beginning. Does not delete the resource rows
-// themselves; combine with explicit DELETE FROM resources via DB() for a
-// hard reset.
+// themselves; use Reset for a full wipe.
 func (m *Mirror) ClearCursors(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	_, err := m.db.ExecContext(ctx, `DELETE FROM sync_state`)
 	return err
+}
+
+// Reset deletes all data from the mirror: every resources row, every FTS
+// entry, every typed side-table row for every registered resource, and
+// every sync_state row. Schema is preserved (CREATE TABLE survives;
+// indexes survive). Returns the number of canonical `resources` rows
+// removed so callers can report it.
+//
+// Typed side-tables (rt_<name>) are wiped only for resources currently
+// registered on this Mirror. Tables for resources the binary doesn't
+// know about (e.g. left behind by an older binary) are left alone.
+//
+// This is the operation a `mirror clear --all` style command should call;
+// raw DELETE FROM resources via DB() leaves typed tables stale.
+func (m *Mirror) Reset(ctx context.Context) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	tx, err := m.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, fmt.Errorf("mirror: reset begin: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM resources`)
+	if err != nil {
+		return 0, fmt.Errorf("mirror: reset resources: %w", err)
+	}
+	cleared, _ := res.RowsAffected()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM resources_fts`); err != nil {
+		return 0, fmt.Errorf("mirror: reset fts: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sync_state`); err != nil {
+		return 0, fmt.Errorf("mirror: reset sync_state: %w", err)
+	}
+
+	m.resMu.RLock()
+	names := make([]string, 0, len(m.res))
+	for n, r := range m.res {
+		if len(r.Columns) > 0 {
+			names = append(names, n)
+		}
+	}
+	m.resMu.RUnlock()
+
+	for _, n := range names {
+		// Quoted via validIdentifier-gated name + the rt_ prefix; safe
+		// against injection since Register() pins names to that shape.
+		stmt := fmt.Sprintf(`DELETE FROM "%s"`, typedTableName(n))
+		if _, err := tx.ExecContext(ctx, stmt); err != nil {
+			return 0, fmt.Errorf("mirror: reset %s: %w", typedTableName(n), err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, fmt.Errorf("mirror: reset commit: %w", err)
+	}
+	return int(cleared), nil
 }
 
 // Status returns one ResourceStatus per registered resource. Unknown
