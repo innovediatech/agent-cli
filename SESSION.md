@@ -1,99 +1,102 @@
-# Session Handoff — 2026-05-11T22:30-04:00
+# Session Handoff — 2026-05-12T00:00-04:00
 
-**Project:** agent-cli (foundation lib) + platform-cli (first consumer) + innovedia-platform/mcp-server (live fix)
-**Branch:** none — agent-cli and platform-cli are pre-git
-**Last commit:** N/A (no repos yet); innovedia-platform sibling repo is at `eed5144` on `main` (unrelated prior work)
-**Deployed tag:** N/A (libraries only); platform MCP config updated in `~/.claude.json` — takes effect on next Claude Code restart
-**Session length:** ~3-4 hours across three logical phases
+**Project:** agent-cli + platform-cli (foundation lib + first consumer)
+**Branch:** both on `main`
+**Last commit (agent-cli):** `7ff4167` — feat(mirror): add SQLite-backed local cache with FTS5
+**Last commit (platform-cli):** `0f141c2` — feat: wire agent-cli mirror into contacts/deals/companies
+**Deployed tag:** N/A — both are libraries; nothing deployed
+**Session length:** ~2 hours, picked up from 2026-05-11T22:30 handoff
 
 ---
 
 ## 1. Just finished
 
-- **Printing Press evaluation phase** — installed, isolated in Docker, generated petstore (74 files, 67s) and Stripe (782 files, 765 commands, 112s). Findings at `~/pp-sandbox/FINDINGS.md`. Tool kept around for future no-API-service work.
-- **agent-cli v0 + v0.1a shipped** at `/projects/libraries/agent-cli/`. Six packages, 1700+ LOC, all tests pass under `-race`, `govulncheck` clean. Packages: `agent`, `exitcode`, `envelope`, `selectfields`, `output`, `introspect`. Reference CLI at `examples/echo-cli/`.
-- **platform-cli v0.1.0 shipped** at `/projects/libraries/platform-cli/`. Real consumer of agent-cli wrapping the same endpoints the platform MCP wraps (deals/contacts/companies/documents). Live-tested against the platform API.
-- **Platform MCP rot fixed** — 4 independent issues that left the MCP silently dead despite "✓ Connected" status. ClusterIP-auto-discovery wrapper script at `packages/mcp-server/bin/run-platform-mcp.sh`, dead strategy tools removed from `src/index.ts`, `~/.claude.json` updated. Verified end-to-end via direct stdio JSON-RPC.
-- **Comparison harness landed real numbers** at `/projects/libraries/platform-cli/FINDINGS.md`. Headline: curated MCP markdown wins per-call (2,991 tokens vs CLI 4,673 on same data) but CLI's `agent-context` is 3.6× lighter than MCP boot cost (1,155 vs 4,121 tokens).
+- **Both repos initialized.** agent-cli + platform-cli now on `main` as separate local repos with `.gitignore` and an initial-import commit each. Per-repo decision (option a from prior open question §4). No GitHub remotes yet.
+- **agent-cli `mirror` package shipped (v0.1b)** — `7ff4167`. Resource-agnostic SQLite cache + FTS5 + cursors + caller-declared typed columns + `DB()` escape hatch. Pure-Go `modernc.org/sqlite` (no CGO). 19 tests pass under `-race`; `go vet` clean; `govulncheck` clean; `make verify` smoke gate green.
+- **platform-cli wired to mirror (v0.1.1)** — `0f141c2`. Added `internal/mirrorstore` + per-resource `{contacts,deals,companies} {sync,search,list-local}` + top-level `mirror status / clear`. Smoke tested live against platform API on himothy: 193 contacts synced in 210ms, FTS5 search 17ms, compound query 7ms.
+- **Comparison harness re-run with new numbers** at `/projects/libraries/platform-cli/FINDINGS.md` Phase 2b. Headline: **mirror search 54× lighter than MCP** (55 vs 2,991 tokens), **compound DB query 68× lighter** AND not expressible in MCP at all.
 
 ## 2. Current state (verified)
 
-⚠️ **DIRTY TREE on innovedia-platform repo** (kept intentionally; awaiting commit decision):
+⚠️ **DIRTY TREE on innovedia-platform repo** (carried over from prior handoff, untouched this session):
 ```
  M packages/mcp-server/src/index.ts          (strategy tool registrations removed)
 ?? packages/mcp-server/bin/                  (new wrapper script directory)
 ```
 
 **Verified working right now:**
-- `cd /projects/libraries/agent-cli && /home/innovedia-admin/.local/go/bin/go test -race ./...` → all packages pass
+- `cd /projects/libraries/agent-cli && /home/innovedia-admin/.local/go/bin/go test -race ./...` → 7 packages pass (agent, envelope, exitcode, introspect, mirror, output, selectfields)
 - `cd /projects/libraries/agent-cli && /home/innovedia-admin/.local/go/bin/go vet ./...` → clean
 - `cd /projects/libraries/agent-cli && /home/innovedia-admin/go/bin/govulncheck ./...` → "No vulnerabilities found"
-- `make verify` (in agent-cli) → smoke tests on echo-cli pass: greet+select, csv envelope unwrap, exit code 4
-- `/tmp/echo-cli agent-context | wc -c` → 2,156 bytes (~539 tokens)
-- `/tmp/platform-cli agent-context | wc -c` → 4,619 bytes (~1,155 tokens)
-- Direct MCP stdio test: `tools/list` returns 6 tools (search_documents, get_document, list_folders, list_deals, get_deal, search_pipeline); `search_pipeline(contacts)` returns 193 real contacts as 12,853-byte markdown table
-- Platform API auth: admin creds work via ClusterIP `http://172.43.165.122/api`
+- `make verify` (in agent-cli) → echo-cli smoke tests + greet/select/csv/exit-4 all pass
+- `cd /projects/libraries/platform-cli && /home/innovedia-admin/.local/go/bin/go build ./...` → clean
+- Live API smoke test (PLATFORM_API_URL=http://172.43.165.122/api):
+  - `platform-cli contacts sync --agent` → `{"fetched":193,"stored":193,"skipped":0}` in 210ms
+  - `platform-cli contacts search "jose" --agent --select results.id,results.email` → 4 hits, 17ms
+  - `sqlite3 /tmp/pcli-mirror.db` compound query (FTS5 + typed-column filter) → 2 hits, 7ms
 
-**NOT yet verified (requires Claude Code restart):**
-- The new platform MCP wrapper actually runs when invoked through Claude Code as opposed to direct stdio. Implementation is identical so very high confidence, but a real session test is the proof.
+**Repo state:**
+- agent-cli: 2 commits on `main`, working tree clean
+- platform-cli: 2 commits on `main`, working tree clean
+- innovedia-platform: still at `eed5144` with the same dirty paths from prior session (NOT touched this session)
 
 **Backups:**
-- `~/.claude.json.bak-2026-05-11-platform-mcp-fix` — original platform MCP config in case the new wrapper has any surprise
+- `~/.claude.json.bak-2026-05-11-platform-mcp-fix` — original platform MCP config (still present)
 
 ## 3. Unfinished / in-flight
 
-- [ ] **agent-cli v0.1b: `httpclient` package** — shared retry/backoff/error-classification helper. Defer until a second CLI is built so the shape is informed by two consumers, not one. Pending, not blocked.
-- [ ] **agent-cli v0.1b: `mirror` package** — SQLite + FTS5 + cursor sync. The architecturally heaviest piece and where the compound-query / offline / FTS5-search wins live. Pending, the next big focused session.
-- [ ] **Three triage follow-ups** (see Open questions §7).
-- [ ] **Phase 3 — second-CLI comparison** (Sentry/GlitchTip head-to-head, or GitHub `gh` head-to-head). Pending until mirror lands.
+- [ ] **Push both repos to GitHub** — pending Jayson's call on visibility (public vs private) and whether to use `innovediatech/` org. Local repos are ready; nothing else gates this.
+- [ ] **agent-cli `httpclient` package** — shared retry/backoff/error-classification. Now genuinely informed by two consumer shapes (echo-cli + platform-cli), so the API design has the data it needs. Pending, not blocked.
+- [ ] **Phase 3 — second-CLI comparison** (Sentry/GlitchTip head-to-head, or GitHub `gh` head-to-head) — pending, not blocked.
+- [ ] **The two lingering open questions from prior session** still open (see §7).
 
 ## 4. Known issues
 
-- **`strategy` commands in platform-cli still mirror deleted routes.** `platform-cli strategy {context,decisions,sessions} list` 404s upstream. Leaving them in until the methodology dossier widgets are built (per `cleanup/delete-strategy-os`). Cosmetic.
-- **Admin credentials in `~/.claude.json` for the platform MCP.** A regression vs the original service-account design. Working-as-intended for today; flagged for proper fix.
-- **Platform-cli `default` mode used to emit indented JSON when piped (36k tokens).** FIXED in agent-cli v0.1a — default is now compact when stdout is not a terminal; `--pretty` to force indent.
-- **The MCP server's `client.ts` and `tools/strategy-*.ts` still exist** even though the registrations are gone from `index.ts`. Dead code, harmless, kept for symmetry. Worth a cleanup PR.
+- **Sync is full-refresh per resource.** No incremental cursor; `cursor` column stores the wall-clock RFC3339 of last sync, used only for "synced N seconds ago" UX. Fine at 193 rows; needs revisit when the platform API exposes pagination.
+- **Empty results for deals/companies on the live himothy DB.** Sync correctly returned 0/0 for both — that's the actual data state, not a bug. Worth re-verifying once those tables get populated.
+- **Mirror search hit count includes the FTS5 default tokenizer's stemming.** "jose" matches "jose.collado@gmail.com" and "Jose Sr." consistently; expected behavior, but worth knowing if a query feels too loose.
+- **`platform-cli contacts list --agent --select results.first_name`** doesn't project anything (the API returns camelCase `firstName`, not `first_name`). Cosmetic; mirror's typed columns *do* fall back camelCase correctly via `lookupFieldValue`, but the `--select` projector is verbatim-keyed. Worth a follow-up in agent-cli's `selectfields` package.
 
 ## 5. Hot files
 
-- `/projects/libraries/agent-cli/output/output.go` — indent-on-pipe fix in `Write()`; new `--pretty` path; render() signature now takes indent bool
-- `/projects/libraries/agent-cli/introspect/introspect.go` — NEW; emits Cobra-tree JSON for `agent-context` subcommand
-- `/projects/libraries/agent-cli/agent/agent.go` — added `Pretty` field + `--pretty` flag binding
-- `/projects/libraries/platform-cli/cmd/platform-cli/main.go` — full Cobra surface; wires `introspect.EmitCommand(root, "0.1.0")`
-- `/projects/libraries/platform-cli/internal/authclient/authclient.go` — JWT login + token cache (mode 0600 at `~/.config/innovedia-platform-cli/token.json`) + reactive 401 retry
-- `/projects/apps/innovedia-platform/packages/mcp-server/src/index.ts` — strategy tool registrations removed; comment block explains why
-- `/projects/apps/innovedia-platform/packages/mcp-server/bin/run-platform-mcp.sh` — NEW wrapper that resolves the platform-api ClusterIP via kubectl and execs tsx
+- `/projects/libraries/agent-cli/mirror/mirror.go` — NEW; whole package. Generic `resources` table + per-resource `rt_<name>` typed tables + FTS5 + cursors. ~520 lines.
+- `/projects/libraries/agent-cli/mirror/mirror_test.go` — NEW; 19 cases covering open/register/upsert/get/list/search/cursor/persist-across-reopen/concurrent-writes.
+- `/projects/libraries/platform-cli/internal/mirrorstore/mirrorstore.go` — NEW; opens mirror at `~/.config/innovedia-platform-cli/mirror.db` (override `PLATFORM_MIRROR=…`), registers contacts/deals/companies with typed columns.
+- `/projects/libraries/platform-cli/cmd/platform-cli/mirror_cmd.go` — NEW; sync/search/list-local + top-level `mirror` Cobra subcommands.
+- `/projects/libraries/platform-cli/cmd/platform-cli/main.go` — wired `addMirrorSubcommands` into the three resource commands and added `newMirrorCmd` to the root.
+- `/projects/libraries/platform-cli/compare.sh` — Phase 2b search-comparison block appended.
+- `/projects/libraries/platform-cli/FINDINGS.md` — Phase 2b section: 54×/68× headline, mirror semantics, when-it-earns-its-keep section.
+- `/projects/libraries/agent-cli/PLAN.md` — status stamp updated to v0.1b; mirror + introspect crossed off "Out of scope for v0".
 
 ## 6. Next concrete step
 
-**Build agent-cli v0.1b `mirror` package** at `/projects/libraries/agent-cli/mirror/`. This is the compound-query / FTS5 / offline-query piece — the asymmetric win that the Printing Press measurement actually points to (and that v0.1a hasn't measured yet).
+**Either** (a) push both repos to GitHub, **or** (b) start agent-cli `httpclient`. Recommendation: **(a) GitHub push first** — local-only repos have no off-host backup and the mirror work is the highest-density hour from this week. After that, `httpclient` is the natural next slice now that platform-cli's auth-retry pattern is the second data point informing the shape.
 
-Open `PLAN.md` §"Out of scope for v0" for the mirror notes, then design:
-- `mirror.New(dbPath)` opens/creates a SQLite DB with FTS5 enabled, sets pragmas
-- `mirror.RegisterResource(name, schemaSQL, upsertSQL)` declares a resource family
-- `mirror.SyncCursor(name)` reads/writes per-resource cursor checkpoint
-- `mirror.UpsertBatch(name, rows)` transactional batched upsert (the platform-cli + petstore-pp-cli code shows the shape)
-- `mirror.Search(name, ftsQuery)` FTS5 query helper
-- Test against an in-memory sqlite
+If pushing to GitHub:
+```bash
+# Decide visibility (likely private — these aren't ready to publish yet),
+# then for each repo:
+cd /projects/libraries/agent-cli
+gh repo create innovediatech/agent-cli --private --source=. --remote=origin --push
+cd /projects/libraries/platform-cli
+gh repo create innovediatech/platform-cli --private --source=. --remote=origin --push
+```
 
-Reference implementations to copy patterns from (NOT verbatim — Apache 2.0 attribution if so):
-- `~/pp-sandbox/pp-home/library/petstore/internal/store/store.go` (1,370 LOC)
-- `~/pp-sandbox/pp-home/library/petstore/internal/cli/sync.go` (1,022 LOC)
-
-Once mirror lands, wire it into `platform-cli` (`platform-cli contacts sync`, `contacts search "q"`) and re-run the comparison harness. The expected headline: compound queries the MCP can't do (cross-resource JOINs, FTS5 search across documents+notes+contacts) become token-cheap.
+If starting httpclient:
+- Open `/projects/libraries/agent-cli/PLAN.md` and re-read Design Principles §3.
+- Look at `/projects/libraries/platform-cli/internal/authclient/authclient.go` for the live retry-on-401 pattern.
+- Look at `~/pp-sandbox/pp-home/library/petstore/internal/api/` for Printing Press's retry shape.
+- Design surface: `httpclient.New(opts)`; opts include retry policy, backoff, classifier, header injection. Should compose with `exitcode.Classify` so failed retries surface typed exit codes.
 
 ## 7. Open questions for Jayson
 
-1. **Commit the platform MCP changes?** The dirty tree on `innovedia-platform` (`packages/mcp-server/src/index.ts` + `packages/mcp-server/bin/run-platform-mcp.sh`) needs a commit + push + maybe a redeploy if the MCP server's deployment image is from source. *Options:* (a) commit + push, (b) leave dirty for you to review, (c) revert and re-apply via a feature branch. I left it dirty by default per Git Safety Protocol.
-
-2. **Provision `mcp@innovedia.internal` service account?** Currently the platform MCP is running with admin (`jjoseph@innovedia.ai`) credentials in `~/.claude.json`. *Options:* (a) reset the existing user's password via DB or `/users` API, (b) leave on admin and accept the security regression, (c) create a dedicated service account with a narrower role.
-
-3. **Add the `httpclient` package before or after `mirror`?** *Reasoning to add first:* helps the next CLI consumer have a retry/backoff story out of the box. *Reasoning to defer:* mirror is the asymmetric win; httpclient is finishing-touches. My recommendation is **mirror first**, then httpclient extracted from whatever the second consumer needs.
-
-4. **Initialize git repos for agent-cli and platform-cli?** They're pre-git right now. Worth doing before the next session so commits become a thing. *Options:* (a) two separate repos under `innovediatech/`, (b) keep them as folders, (c) put both in a monorepo at `/projects/libraries/agent-tools/`.
+1. **Push to GitHub now?** Visibility = public vs private? Org = `innovediatech/`? — neither repo has an off-host backup right now, which is mild risk. *My recommendation:* private, `innovediatech/`, push tonight.
+2. **Commit the dirty platform MCP changes?** (Carried over from prior handoff.) `packages/mcp-server/src/index.ts` + `packages/mcp-server/bin/` still uncommitted on innovedia-platform. Needs commit + push + redeploy if the MCP server's deployment image is from source. *Options:* (a) commit + push, (b) leave dirty, (c) feature branch. Left dirty by default.
+3. **Provision `mcp@innovedia.internal` service account?** (Carried over.) Platform MCP still on admin (`jjoseph@innovedia.ai`) creds in `~/.claude.json`. *Options:* (a) reset existing user via DB or `/users` API, (b) leave on admin, (c) create a dedicated service account.
+4. **Should `--select` learn the snake_case ↔ camelCase fallback** that `mirror.lookupFieldValue` already has? Cosmetic but consistent — the mirror's typed columns work because of it; the `--select` projector doesn't. Trivial to add to `selectfields/selectfields.go`.
 
 ## Cross-references
 
-- **agent-cli FINDINGS / experiment writeup:** `~/pp-sandbox/FINDINGS.md` (Printing Press evaluation)
-- **platform-cli comparison harness:** `/projects/libraries/platform-cli/FINDINGS.md`
-- **innovedia-platform repo's last session handoff:** `/projects/apps/innovedia-platform/SESSION.md` (2026-05-09, unrelated Slice 1a Operations Layer ship — not overwritten)
+- **agent-cli FINDINGS / experiment writeup:** `~/pp-sandbox/FINDINGS.md` (Printing Press evaluation, Phase 1)
+- **platform-cli comparison harness:** `/projects/libraries/platform-cli/FINDINGS.md` (Phase 2 + 2b)
+- **innovedia-platform repo's last session handoff:** `/projects/apps/innovedia-platform/SESSION.md` (2026-05-09, Slice 1a Operations Layer ship — unrelated)
