@@ -11,6 +11,11 @@
 // An empty spec returns the input unchanged. Fields that don't exist in the
 // input are silently dropped (rather than producing nulls or errors).
 //
+// Key matching is case-style tolerant: a spec key is tried verbatim first,
+// then its snake↔camel rendering. So `--select first_name` projects from an
+// API that returns `firstName`, and vice versa. The output key is whatever
+// the caller asked for.
+//
 // The projection operates on `any` values that came out of encoding/json's
 // decoder (map[string]any, []any, primitives). It does not use reflection on
 // arbitrary structs — encode to JSON first if you have a strongly-typed value.
@@ -111,7 +116,7 @@ func applyNode(n *node, v any) any {
 	case map[string]any:
 		out := map[string]any{}
 		for key, child := range n.children {
-			val, ok := x[key]
+			val, ok := lookupKey(x, key)
 			if !ok {
 				continue
 			}
@@ -131,4 +136,66 @@ func applyNode(n *node, v any) any {
 		// into a scalar, which makes no sense. Drop it.
 		return nil
 	}
+}
+
+// lookupKey resolves a map entry, trying the key verbatim then its
+// snake↔camel rendering. Lets `--select first_name` match an API that
+// returns `firstName` (and vice versa). Mirrors the fallback in
+// mirror.lookupFieldValue so the two projection layers behave the same.
+func lookupKey(m map[string]any, key string) (any, bool) {
+	if v, ok := m[key]; ok {
+		return v, true
+	}
+	if alt := snakeToCamel(key); alt != key {
+		if v, ok := m[alt]; ok {
+			return v, true
+		}
+	}
+	if alt := camelToSnake(key); alt != key {
+		if v, ok := m[alt]; ok {
+			return v, true
+		}
+	}
+	return nil, false
+}
+
+// snakeToCamel turns "first_name" into "firstName". Empty segments
+// between underscores are dropped ("a__b" → "aB"); leading or trailing
+// underscores in JSON keys aren't worth handling specially.
+func snakeToCamel(s string) string {
+	if !strings.ContainsRune(s, '_') {
+		return s
+	}
+	parts := strings.Split(s, "_")
+	var b strings.Builder
+	b.Grow(len(s))
+	b.WriteString(parts[0])
+	for _, p := range parts[1:] {
+		if p == "" {
+			b.WriteByte('_')
+			continue
+		}
+		b.WriteString(strings.ToUpper(p[:1]))
+		b.WriteString(p[1:])
+	}
+	return b.String()
+}
+
+// camelToSnake turns "firstName" into "first_name". Naive: every
+// uppercase rune becomes "_x" (so "URLPath" becomes "u_r_l_path"). Good
+// enough for matching JSON keys, which conventionally avoid acronym runs.
+func camelToSnake(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 4)
+	for i, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			if i > 0 {
+				b.WriteByte('_')
+			}
+			b.WriteRune(r + ('a' - 'A'))
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }

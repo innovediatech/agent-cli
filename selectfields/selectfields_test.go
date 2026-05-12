@@ -147,6 +147,81 @@ func TestEmptySegmentsTolerated(t *testing.T) {
 	}
 }
 
+func TestSnakeSpecMatchesCamelData(t *testing.T) {
+	// API returns camelCase; user --selects with snake_case (the convention
+	// the rest of the CLI uses for typed columns / DB columns).
+	in := j(t, `{"firstName":"jose","lastName":"collado","email":"x@y"}`)
+	got := Parse("first_name,email").Apply(in)
+	want := map[string]any{"first_name": "jose", "email": "x@y"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestCamelSpecMatchesSnakeData(t *testing.T) {
+	// Reverse: API returns snake_case; user --selects camelCase.
+	in := j(t, `{"first_name":"jose","last_name":"collado"}`)
+	got := Parse("firstName").Apply(in)
+	want := map[string]any{"firstName": "jose"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestExactMatchWinsOverFallback(t *testing.T) {
+	// If both case-styles are present, the verbatim key wins.
+	in := j(t, `{"first_name":"snake","firstName":"camel"}`)
+	got := Parse("first_name").Apply(in)
+	want := map[string]any{"first_name": "snake"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestNestedCaseFallback(t *testing.T) {
+	// Fallback applies at every nesting level, including array traversal.
+	in := j(t, `{"results":[{"firstName":"a","email":"x"},{"firstName":"b","email":"y"}]}`)
+	got := Parse("results.first_name,results.email").Apply(in)
+	want := map[string]any{
+		"results": []any{
+			map[string]any{"first_name": "a", "email": "x"},
+			map[string]any{"first_name": "b", "email": "y"},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %#v, want %#v", got, want)
+	}
+}
+
+func TestSnakeToCamel(t *testing.T) {
+	cases := map[string]string{
+		"id":                "id",
+		"first_name":        "firstName",
+		"a_b_c":             "aBC",
+		"":                  "",
+		"no_underscores_in": "noUnderscoresIn",
+	}
+	for in, want := range cases {
+		if got := snakeToCamel(in); got != want {
+			t.Errorf("snakeToCamel(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestCamelToSnake(t *testing.T) {
+	cases := map[string]string{
+		"id":        "id",
+		"firstName": "first_name",
+		"URLPath":   "u_r_l_path",
+		"":          "",
+	}
+	for in, want := range cases {
+		if got := camelToSnake(in); got != want {
+			t.Errorf("camelToSnake(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestDoesNotMutateInput(t *testing.T) {
 	in := j(t, `{"a":{"b":1,"c":2}}`)
 	original, _ := json.Marshal(in)
