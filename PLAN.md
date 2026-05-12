@@ -2,7 +2,7 @@
 
 **One-line:** Go library that gives every Innovedia CLI agent-native ergonomics by default — no per-CLI re-derivation.
 
-**Status:** v0.1b — `mirror` package landed 2026-05-12 (resource-agnostic SQLite cache + FTS5 + cursors + optional typed columns). Six packages from v0/v0.1a still hold; see `mirror/mirror.go`.
+**Status:** v0.1b — `mirror` landed 2026-05-12 (resource-agnostic SQLite cache + FTS5 + cursors + optional typed columns); `httpclient` landed 2026-05-12 (retry/backoff/classification transport with hook surface, in production behind platform-cli/authclient). Eight packages cover the day-one CLI primitives.
 
 **Why this exists:** The Printing Press experiment (see `/home/innovedia-admin/pp-sandbox/FINDINGS.md`) validated that the agent-native CLI patterns (`--agent`, `--select`, response envelope, typed exit codes, stderr/stdout discipline, local SQLite mirror) are the durable value, independent of the generator that produces them. This library codifies those patterns so they apply uniformly to:
 
@@ -32,14 +32,16 @@ github.com/innovediatech/agent-cli
 ├── envelope/     # Response envelope { meta, results } with provenance
 ├── selectfields/ # --select parser + JSON projection (dotted paths, arrays)
 ├── output/       # Write helpers — stderr/stdout discipline, --deliver file:|webhook:
-├── introspect/   # agent-context JSON emitter (Cobra-tree walker)         [v0.1]
-├── mirror/       # SQLite local mirror, FTS5, cursor sync, batch upsert  [v0.1]
+├── introspect/   # agent-context JSON emitter (Cobra-tree walker)         [v0.1a]
+├── mirror/       # SQLite local mirror, FTS5, cursor sync, batch upsert  [v0.1b]
+├── httpclient/   # retry/backoff/classification HTTP transport            [v0.1b]
 └── examples/
     └── echo-cli/ # Reference CLI: exercises every v0 pattern
 ```
 
 v0 scope: `agent`, `exitcode`, `envelope`, `selectfields`, `output`, `examples/echo-cli`, tests for selectfields.
-v0.1 scope: `introspect`, `mirror`.
+v0.1a scope: `introspect`.
+v0.1b scope: `mirror`, `httpclient`.
 
 ---
 
@@ -117,7 +119,8 @@ Demonstrates: `--agent`, `--select id,greeting`, `--compact`, `--deliver file:`,
 
 - ~~SQLite mirror (`mirror/`)~~ — landed v0.1b (2026-05-12).
 - ~~Auto-`agent-context` emitter walking the Cobra tree~~ — landed v0.1a as `introspect`.
-- Webhook delivery with retries — v0 ships best-effort POST; retry/backoff is v0.2.
+- ~~HTTP transport with retry/backoff (`httpclient/`)~~ — landed v0.1b (2026-05-12).
+- Webhook delivery retries (output package's `--deliver webhook:`) — can now be backed by `httpclient`; pending wire-up in v0.2.
 - Profile system (saved flag sets) — v0.2.
 - `feedback` command pattern — v0.2.
 - Generator integration (post-processing Printing-Press output through our lib) — v0.3.

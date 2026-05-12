@@ -84,6 +84,8 @@ That's a complete agent-native CLI. Out of the box it supports:
 | [`selectfields`](./selectfields) | Compiles `--select id,user.email,items.name` and applies it to any JSON-shaped value. Arrays auto-traverse. |
 | [`output`](./output) | The single render-and-deliver entry point. Handles mode (JSON/CSV/plain), `--compact`, projection, and `--deliver` (stdout/file/webhook). Envelope-aware: tabular modes auto-unwrap `results`. Auto-compact when piped; `--pretty` to force indent. |
 | [`introspect`](./introspect) | Walks the Cobra tree and emits a JSON `agent-context` describing the CLI surface (global flags, commands, subcommands, per-command flags). One line in `main()` registers an `agent-context` subcommand. |
+| [`mirror`](./mirror) | Resource-agnostic SQLite local mirror with FTS5, cursor sync, optional typed columns. Powers `--data-source local`. |
+| [`httpclient`](./httpclient) | Retry-aware HTTP transport with structured error classification (composes with `exitcode`), pluggable request/response hooks for auth, and optional rate limiting. Powers platform-cli's `authclient`. |
 
 ## Patterns this gives you
 
@@ -100,8 +102,8 @@ These are the patterns we extracted from Printing Press's generated code and val
 ## Roadmap
 
 - **v0.1a — shipped 2026-05-11** — `introspect` package; auto-compact JSON when piped (`--pretty` to override).
-- **v0.1b — next** — `httpclient` package (retry/backoff/error classification helper shared by every Innovedia CLI) and `mirror` package (SQLite local mirror with FTS5, cursor sync, batch upsert).
-- **v0.2** — webhook retry/backoff, profile system (saved flag sets), `feedback` command pattern.
+- **v0.1b — shipped 2026-05-12** — `mirror` (SQLite + FTS5 + cursors) and `httpclient` (retry/backoff/classification, hook surface for auth and rate limiting; powers platform-cli's `authclient`).
+- **v0.2** — profile system (saved flag sets), `feedback` command pattern.
 - **v0.3** — generator integration: post-process Printing-Press-generated CLIs through this lib for uniformity.
 
 ## Quality gate
