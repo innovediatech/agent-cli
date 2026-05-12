@@ -85,7 +85,7 @@ That's a complete agent-native CLI. Out of the box it supports:
 | [`output`](./output) | The single render-and-deliver entry point. Handles mode (JSON/CSV/plain), `--compact`, projection, and `--deliver` (stdout/file/webhook). Envelope-aware: tabular modes auto-unwrap `results`. Auto-compact when piped; `--pretty` to force indent. |
 | [`introspect`](./introspect) | Walks the Cobra tree and emits a JSON `agent-context` describing the CLI surface (global flags, commands, subcommands, per-command flags). One line in `main()` registers an `agent-context` subcommand. |
 | [`mirror`](./mirror) | Resource-agnostic SQLite local mirror with FTS5, cursor sync, optional typed columns. Powers `--data-source local`. |
-| [`httpclient`](./httpclient) | Retry-aware HTTP transport with structured error classification (composes with `exitcode`), pluggable request/response hooks for auth, and optional rate limiting. Powers platform-cli's `authclient`. |
+| [`httpclient`](./httpclient) | Retry-aware HTTP transport with structured error classification (composes with `exitcode`), pluggable request/response hooks for auth, and optional rate limiting. Powers [platform-cli](https://github.com/innovediatech/platform-cli) (session-auth + 401-retry) and [glitchtip-cli](https://github.com/innovediatech/glitchtip-cli) (bearer auth + Link-header pagination). See [`httpclient/README.md`](./httpclient/README.md). |
 
 ## Patterns this gives you
 
@@ -102,7 +102,7 @@ These are the patterns we extracted from Printing Press's generated code and val
 ## Roadmap
 
 - **v0.1a — shipped 2026-05-11** — `introspect` package; auto-compact JSON when piped (`--pretty` to override).
-- **v0.1b — shipped 2026-05-12** — `mirror` (SQLite + FTS5 + cursors) and `httpclient` (retry/backoff/classification, hook surface for auth and rate limiting; powers platform-cli's `authclient`).
+- **v0.1b — shipped 2026-05-12** — `mirror` (SQLite + FTS5 + cursors) and `httpclient` (retry/backoff/classification, hook surface for auth and rate limiting). Extensions surfaced by the [glitchtip-cli](https://github.com/innovediatech/glitchtip-cli) build: `envelope.Meta.NextCursor` for paginated agent surfaces, `httpclient.DoJSONHeaders` for response-header inspection (cursors, rate-limit budgets), `mirror.Reset` for atomic full-data wipes including typed side-tables.
 - **v0.2** — profile system (saved flag sets), `feedback` command pattern.
 - **v0.3** — generator integration: post-process Printing-Press-generated CLIs through this lib for uniformity.
 
