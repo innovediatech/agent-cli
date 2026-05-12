@@ -537,6 +537,66 @@ func TestDoJSONErrorReturnsAPIError(t *testing.T) {
 	}
 }
 
+func TestDoJSONHeadersReturnsResponseHeaders(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Link", `<https://api.example/?cursor=next>; rel="next"`)
+		w.Header().Set("X-Request-Id", "req_123")
+		fmt.Fprint(w, `{"ok":true}`)
+	}))
+	defer srv.Close()
+
+	c := newClient(t, srv)
+	var out map[string]any
+	hdr, err := c.DoJSONHeaders(context.Background(), "GET", "/", nil, &out)
+	if err != nil {
+		t.Fatalf("DoJSONHeaders: %v", err)
+	}
+	if got := hdr.Get("Link"); !strings.Contains(got, `rel="next"`) {
+		t.Errorf("Link header missing or wrong: %q", got)
+	}
+	if got := hdr.Get("X-Request-Id"); got != "req_123" {
+		t.Errorf("X-Request-Id = %q", got)
+	}
+	if out["ok"] != true {
+		t.Errorf("body decode failed: %v", out)
+	}
+}
+
+func TestDoJSONHeadersNilBodyStillReturnsHeaders(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Trace", "abc")
+		w.WriteHeader(204)
+	}))
+	defer srv.Close()
+
+	c := newClient(t, srv)
+	hdr, err := c.DoJSONHeaders(context.Background(), "GET", "/", nil, nil)
+	if err != nil {
+		t.Fatalf("DoJSONHeaders: %v", err)
+	}
+	if got := hdr.Get("X-Trace"); got != "abc" {
+		t.Errorf("X-Trace = %q", got)
+	}
+}
+
+func TestDoJSONHeadersErrorReturnsNilHeader(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Trace", "shouldnt-be-returned")
+		w.WriteHeader(500)
+		fmt.Fprint(w, `{"e":1}`)
+	}))
+	defer srv.Close()
+
+	c := newClient(t, srv)
+	hdr, err := c.DoJSONHeaders(context.Background(), "GET", "/", nil, nil)
+	if err == nil {
+		t.Fatal("want error")
+	}
+	if hdr != nil {
+		t.Errorf("headers should be nil on error, got %v", hdr)
+	}
+}
+
 func TestNilContext(t *testing.T) {
 	c, err := httpclient.New(httpclient.Config{BaseURL: "http://x"})
 	if err != nil {

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 )
 
 // DoJSON is the ergonomic JSON wrapper around Do. reqBody, when non-nil,
@@ -19,24 +20,40 @@ import (
 // A nil respBody is supported (for endpoints that return 204 No Content or
 // when the caller intentionally discards the body); the response is still
 // drained so the connection can be reused.
+//
+// Response headers are discarded. Use DoJSONHeaders when the caller needs
+// to inspect Link / X-Request-ID / etc.
 func (c *Client) DoJSON(ctx context.Context, method, path string, reqBody, respBody any) error {
+	_, err := c.DoJSONHeaders(ctx, method, path, reqBody, respBody)
+	return err
+}
+
+// DoJSONHeaders behaves like DoJSON but also returns the response headers,
+// which is the escape hatch for APIs that put pagination cursors, request
+// IDs, rate-limit metadata, or other essential signals in HTTP headers
+// rather than the response body.
+//
+// Headers are returned even when respBody is nil or empty, so callers can
+// always inspect them. On a transport error or 4xx/5xx (returned as
+// *APIError), the returned http.Header is nil.
+func (c *Client) DoJSONHeaders(ctx context.Context, method, path string, reqBody, respBody any) (http.Header, error) {
 	var body io.Reader
 	if reqBody != nil {
 		buf, err := json.Marshal(reqBody)
 		if err != nil {
-			return fmt.Errorf("httpclient: marshaling request body: %w", err)
+			return nil, fmt.Errorf("httpclient: marshaling request body: %w", err)
 		}
 		body = bytes.NewReader(buf)
 	}
 
 	resp, err := c.Do(ctx, method, path, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer drainAndClose(resp)
 
 	if resp.StatusCode >= 400 {
-		return &APIError{
+		return nil, &APIError{
 			Method:     method,
 			URL:        resp.Request.URL.String(),
 			StatusCode: resp.StatusCode,
@@ -45,21 +62,21 @@ func (c *Client) DoJSON(ctx context.Context, method, path string, reqBody, respB
 	}
 
 	if respBody == nil {
-		return nil
+		return resp.Header, nil
 	}
 
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("httpclient: reading response body: %w", err)
+		return resp.Header, fmt.Errorf("httpclient: reading response body: %w", err)
 	}
 	raw = sanitizeJSONResponse(raw)
 	if len(bytes.TrimSpace(raw)) == 0 {
-		return nil
+		return resp.Header, nil
 	}
 	if err := json.Unmarshal(raw, respBody); err != nil {
-		return fmt.Errorf("httpclient: decoding response: %w", err)
+		return resp.Header, fmt.Errorf("httpclient: decoding response: %w", err)
 	}
-	return nil
+	return resp.Header, nil
 }
 
 // Limiter is the minimal rate-limiting interface. Implementations should
