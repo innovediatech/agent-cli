@@ -120,7 +120,7 @@ Demonstrates: `--agent`, `--select id,greeting`, `--compact`, `--deliver file:`,
 - ~~SQLite mirror (`mirror/`)~~ — landed v0.1b (2026-05-12).
 - ~~Auto-`agent-context` emitter walking the Cobra tree~~ — landed v0.1a as `introspect`.
 - ~~HTTP transport with retry/backoff (`httpclient/`)~~ — landed v0.1b (2026-05-12).
-- Webhook delivery retries (output package's `--deliver webhook:`) — can now be backed by `httpclient`; pending wire-up in v0.2.
+- ~~Webhook delivery retries (output package's `--deliver webhook:`)~~ — landed v0.1b (2026-05-12). `postWebhook` now goes through `httpclient`: 3 attempts, exp backoff, Retry-After honoring, *httpclient.APIError with proper exitcode mapping on terminal failure. 30s per-attempt timeout, 90s overall context budget.
 - Profile system (saved flag sets) — v0.2.
 - `feedback` command pattern — v0.2.
 - Generator integration (post-processing Printing-Press output through our lib) — v0.3.

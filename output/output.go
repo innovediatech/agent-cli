@@ -9,10 +9,10 @@
 package output
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +26,7 @@ import (
 
 	"github.com/innovediatech/agent-cli/agent"
 	"github.com/innovediatech/agent-cli/exitcode"
+	"github.com/innovediatech/agent-cli/httpclient"
 )
 
 // Sink is the parsed --deliver value.
@@ -269,25 +270,41 @@ func writeFileAtomic(path string, body []byte) error {
 	return nil
 }
 
+// postWebhook delivers via the shared httpclient transport so --deliver
+// webhook: inherits retry + backoff + Retry-After honoring + classified
+// exit codes for free. The returned error implements exitcode.CodedError
+// (it is *httpclient.APIError), so callers' os.Exit(exitcode.Classify(err))
+// in main resolves to the right typed code without per-CLI mapping.
 func postWebhook(url string, body []byte) error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
+
+	client, err := httpclient.New(httpclient.Config{
+		Timeout: 30 * time.Second,
+		Headers: http.Header{"Content-Type": []string{"application/json"}},
+	})
 	if err != nil {
-		return fmt.Errorf("building webhook request: %w", err)
+		return fmt.Errorf("building webhook client: %w", err)
 	}
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+
+	resp, err := client.Do(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return exitcode.Errorf(exitcode.API, "webhook POST to %s failed: %v", url, err)
+		fmt.Fprintf(os.Stderr, "webhook %s: %v\n", url, err)
+		return err
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode >= 300 {
-		_, _ = io.Copy(io.Discard, resp.Body)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, int64(httpclient.MaxErrorBodyBytes)))
 		fmt.Fprintf(os.Stderr, "webhook %s returned HTTP %d\n", url, resp.StatusCode)
-		return exitcode.Wrap(exitcode.FromHTTP(resp.StatusCode),
-			errors.New("webhook delivery failed"))
+		return &httpclient.APIError{
+			Method:     http.MethodPost,
+			URL:        url,
+			StatusCode: resp.StatusCode,
+			Body:       errBody,
+		}
 	}
+	_, _ = io.Copy(io.Discard, resp.Body)
 	return nil
 }
 

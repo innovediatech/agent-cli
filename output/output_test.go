@@ -3,16 +3,20 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/spf13/cobra"
 
 	"github.com/innovediatech/agent-cli/agent"
+	"github.com/innovediatech/agent-cli/exitcode"
+	"github.com/innovediatech/agent-cli/httpclient"
 )
 
 func newFlags(t *testing.T, args ...string) *agent.Flags {
@@ -182,6 +186,93 @@ func TestDeliverWebhook(t *testing.T) {
 	}
 	if receivedCT != "application/json" {
 		t.Errorf("expected application/json, got %q", receivedCT)
+	}
+}
+
+func TestDeliverWebhookRetriesOn5xx(t *testing.T) {
+	var hits int32
+	var received string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&hits, 1)
+		if n == 1 {
+			w.WriteHeader(503)
+			return
+		}
+		b, _ := readAll(r)
+		received = b
+		w.WriteHeader(204)
+	}))
+	defer srv.Close()
+
+	var sink bytes.Buffer
+	flags := newFlags(t, "--agent", "--deliver", "webhook:"+srv.URL)
+	if err := Write(&sink, flags, map[string]any{"id": 1}, nil); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if got := atomic.LoadInt32(&hits); got != 2 {
+		t.Errorf("attempts = %d, want 2 (one 5xx retry then success)", got)
+	}
+	if !strings.Contains(received, `"id":1`) {
+		t.Errorf("body not delivered on retry: %q", received)
+	}
+}
+
+func TestDeliverWebhookExhaustsRetriesReturnsAPIError(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(500)
+		_, _ = w.Write([]byte(`{"error":"server fire"}`))
+	}))
+	defer srv.Close()
+
+	var sink bytes.Buffer
+	flags := newFlags(t, "--agent", "--deliver", "webhook:"+srv.URL)
+	err := Write(&sink, flags, map[string]any{"id": 1}, nil)
+	if err == nil {
+		t.Fatal("expected error after exhausted retries, got nil")
+	}
+	if got := atomic.LoadInt32(&hits); got != 3 {
+		t.Errorf("attempts = %d, want 3 (DefaultRetryPolicy.MaxAttempts)", got)
+	}
+	var apiErr *httpclient.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("err type = %T, want *httpclient.APIError; err=%v", err, err)
+	}
+	if apiErr.StatusCode != 500 {
+		t.Errorf("StatusCode = %d, want 500", apiErr.StatusCode)
+	}
+	if !strings.Contains(string(apiErr.Body), "server fire") {
+		t.Errorf("Body did not capture upstream payload: %q", apiErr.Body)
+	}
+	if got := exitcode.Classify(err); got != exitcode.FromHTTP(500) {
+		t.Errorf("exitcode.Classify = %d, want %d (FromHTTP 500)", got, exitcode.FromHTTP(500))
+	}
+}
+
+func TestDeliverWebhookNoRetryOn4xx(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(400)
+	}))
+	defer srv.Close()
+
+	var sink bytes.Buffer
+	flags := newFlags(t, "--agent", "--deliver", "webhook:"+srv.URL)
+	err := Write(&sink, flags, map[string]any{"id": 1}, nil)
+	if err == nil {
+		t.Fatal("expected error on 4xx, got nil")
+	}
+	if got := atomic.LoadInt32(&hits); got != 1 {
+		t.Errorf("attempts = %d, want 1 (4xx must not retry)", got)
+	}
+	var apiErr *httpclient.APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("err type = %T, want *httpclient.APIError", err)
+	}
+	if apiErr.StatusCode != 400 {
+		t.Errorf("StatusCode = %d, want 400", apiErr.StatusCode)
 	}
 }
 

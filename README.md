@@ -102,7 +102,7 @@ These are the patterns we extracted from Printing Press's generated code and val
 ## Roadmap
 
 - **v0.1a — shipped 2026-05-11** — `introspect` package; auto-compact JSON when piped (`--pretty` to override).
-- **v0.1b — shipped 2026-05-12** — `mirror` (SQLite + FTS5 + cursors) and `httpclient` (retry/backoff/classification, hook surface for auth and rate limiting). Extensions surfaced by the [glitchtip-cli](https://github.com/innovediatech/glitchtip-cli) build: `envelope.Meta.NextCursor` for paginated agent surfaces, `httpclient.DoJSONHeaders` for response-header inspection (cursors, rate-limit budgets), `mirror.Reset` for atomic full-data wipes including typed side-tables.
+- **v0.1b — shipped 2026-05-12** — `mirror` (SQLite + FTS5 + cursors) and `httpclient` (retry/backoff/classification, hook surface for auth and rate limiting). Extensions surfaced by the [glitchtip-cli](https://github.com/innovediatech/glitchtip-cli) build: `envelope.Meta.NextCursor` for paginated agent surfaces, `httpclient.DoJSONHeaders` for response-header inspection (cursors, rate-limit budgets), `mirror.Reset` for atomic full-data wipes including typed side-tables. `output.--deliver webhook:` now goes through `httpclient` for retry + backoff + Retry-After + typed exit codes.
 - **v0.2** — profile system (saved flag sets), `feedback` command pattern.
 - **v0.3** — generator integration: post-process Printing-Press-generated CLIs through this lib for uniformity.
 
