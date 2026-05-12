@@ -8,6 +8,7 @@
 //   - .meta.reason: short hint about why the source was chosen (e.g.,
 //     "live unavailable, fell back to local")
 //   - .meta.request_id: upstream correlation id when available
+//   - .meta.next_cursor: opaque cursor to pass back as --cursor for the next page
 package envelope
 
 import "time"
@@ -26,6 +27,10 @@ type Meta struct {
 	SyncedAt  *time.Time `json:"synced_at,omitempty"`
 	Reason    string     `json:"reason,omitempty"`
 	RequestID string     `json:"request_id,omitempty"`
+	// NextCursor is an opaque pagination token. When non-empty, agents can
+	// re-issue the command with --cursor=<value> to fetch the next page.
+	// Empty (omitted) means no further pages.
+	NextCursor string `json:"next_cursor,omitempty"`
 }
 
 // Envelope wraps a result payload of any shape.
@@ -71,5 +76,12 @@ func (e Envelope) WithRequestID(id string) Envelope {
 // WithReason is a fluent setter for the reason hint.
 func (e Envelope) WithReason(reason string) Envelope {
 	e.Meta.Reason = reason
+	return e
+}
+
+// WithNextCursor is a fluent setter for the pagination cursor. Pass empty
+// string to indicate no next page (the field is omitted in JSON either way).
+func (e Envelope) WithNextCursor(cursor string) Envelope {
+	e.Meta.NextCursor = cursor
 	return e
 }

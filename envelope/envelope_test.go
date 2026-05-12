@@ -56,6 +56,22 @@ func TestWithRequestID(t *testing.T) {
 	}
 }
 
+func TestWithNextCursor(t *testing.T) {
+	env := Live([]int{1, 2, 3}).WithNextCursor("cD0yMDI2LTA1LTA2")
+	out, _ := json.Marshal(env)
+	if !strings.Contains(string(out), `"next_cursor":"cD0yMDI2LTA1LTA2"`) {
+		t.Fatalf("next_cursor missing, got %s", out)
+	}
+}
+
+func TestEmptyNextCursorOmitted(t *testing.T) {
+	env := Live("x").WithNextCursor("")
+	out, _ := json.Marshal(env)
+	if strings.Contains(string(out), "next_cursor") {
+		t.Fatalf("empty next_cursor should be omitted, got %s", out)
+	}
+}
+
 func TestRoundtripStructure(t *testing.T) {
 	src := Live(map[string]any{"id": 7, "name": "alice"})
 	b, _ := json.Marshal(src)
